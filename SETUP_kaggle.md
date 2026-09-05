@@ -7,15 +7,18 @@ This guide covers both, plus how to pass the cleaned dataset from notebook 02 to
 
 ## 1. Attach the dataset
 
-Upload `Amazon_Reviews.csv` as a Kaggle Dataset once, then use **Add Data** to attach it to every
-notebook in the pipeline. Nothing else is needed. `da_common.py` searches `/kaggle/input`
-recursively and picks the largest matching CSV, so the exact dataset name and folder do not matter.
+The dataset is published here:
+[Amazon Reviews 2023 Three Category Extract](https://www.kaggle.com/datasets/tahsintajware/amazon-reviews-2023-three-category-extract)
+
+Use **Add Data** to attach it to every notebook in the pipeline. Nothing else is needed. `da_common.py` searches `/kaggle/input` recursively and picks the largest matching CSV, so the
+exact dataset name and folder do not matter.
 
 ---
 
 ## 2. Get `da_common.py` into the notebook
 
-Every notebook opens with a bootstrap cell that searches these locations in order:
+Every notebook opens with a bootstrap cell that first tries a plain `import da_common` (which is
+what a Kaggle Utility Script provides), and if that fails searches these locations in order:
 
 ```
 /kaggle/working/repo
@@ -27,16 +30,25 @@ Every notebook opens with a bootstrap cell that searches these locations in orde
 
 Pick whichever option below suits you.
 
-### Option A - Upload the repository as a Kaggle Dataset (no internet needed)
+### Option A - Kaggle Utility Script (cleanest, no internet needed)
+
+1. On Kaggle go to **Create > New Notebook**, then switch its type to **Script** (File > Editor
+   Type > Script).
+2. Paste the whole contents of `da_common.py` into it.
+3. Rename the script to exactly **`da_common`** and click **Save Version**.
+4. In each pipeline notebook: **File > Add Utility Script**, and pick `da_common`.
+
+Kaggle puts utility scripts on the Python path automatically, so `from da_common import *`
+just works. To change the shared code later you edit one script and save a new version.
+
+### Option B - Upload the repository as a Kaggle Dataset (no internet needed)
 
 1. Create a new Kaggle Dataset and upload `da_common.py` (uploading the whole repo folder is fine
    too).
 2. Attach that dataset to each notebook through **Add Data**.
 3. The bootstrap cell finds it under `/kaggle/input/` automatically.
 
-This is the more reliable option, and it works with internet turned off.
-
-### Option B - Clone from GitHub (internet must be on)
+### Option C - Clone from GitHub (internet must be on)
 
 Turn on **Settings > Internet** for the notebook, then run this in a cell **above** the bootstrap
 cell:
@@ -45,7 +57,8 @@ cell:
 !git clone -q https://github.com/<your-username>/<your-repo>.git /kaggle/working/repo
 ```
 
-The bootstrap cell checks `/kaggle/working/repo` first, so nothing else changes.
+The bootstrap cell checks `/kaggle/working/repo` first, so nothing else changes. The notebooks
+live in `notebooks/`, and `da_common.py` sits one level above them at the repository root.
 
 ---
 

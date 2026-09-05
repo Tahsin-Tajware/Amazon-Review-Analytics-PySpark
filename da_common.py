@@ -41,7 +41,10 @@ __all__ = [
 # Paths
 # ---------------------------------------------------------------------------
 
-_SEARCH_ROOTS = ["/kaggle/input", "/kaggle/working/data", "../data", "./data",
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_SEARCH_ROOTS = ["/kaggle/input", "/kaggle/working/data",
+                 os.path.join(_MODULE_DIR, "data"), "../data", "./data",
                  "/mnt/user-data/uploads", ".."]
 
 
@@ -62,7 +65,7 @@ def _find_dataset() -> str:
 
 
 DATA_PATH = _find_dataset()
-OUT_DIR = "/kaggle/working" if os.path.isdir("/kaggle/working") else os.path.abspath("./output")
+OUT_DIR = "/kaggle/working" if os.path.isdir("/kaggle/working") else os.path.join(_MODULE_DIR, "output")
 FIG_DIR = os.path.join(OUT_DIR, "figures")
 TBL_DIR = os.path.join(OUT_DIR, "results")
 PROC_DIR = os.path.join(OUT_DIR, "processed")

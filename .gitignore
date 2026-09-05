@@ -1,0 +1,25 @@
+# Data
+data/
+*.csv
+!requirements.txt
+
+# Pipeline outputs
+output/
+executed/
+figures/
+results/
+processed/
+*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
