@@ -1,168 +1,223 @@
-# Amazon Customer Review Analytics with PySpark
+# Predicting Review Helpfulness Before the First Vote
 
-A distributed analytics pipeline over 521,607 real Amazon product reviews, built with PySpark,
-Spark SQL and Spark's window-function API, and benchmarked against Pandas.
+**A leakage-free study of Amazon Reviews 2023 using PySpark**
 
-Built for CSE 4262 Data Analytics Lab, Ahsanullah University of Science and Technology.
+CSE 4262 — Data Analytics Lab · Gr-03 / Gr-06
 
 ---
 
-## Overview
+## What this project does
 
-At half a million records a single-machine Pandas script becomes slow and memory-constrained,
-which is the gap distributed engines are built to close. This project answers nine descriptive,
-business-relevant questions about a real review corpus in PySpark, and closes with a timed
-benchmark so the case for distributed processing rests on measurement rather than assumption.
+**Which of the online review literature's canonical findings still hold on a 2023 corpus?**
 
-Verified-purchase status is treated as something to measure, not a trust signal. The badge covers
-93.1% of this extract, but it can still sit on a manipulated review when a seller supplies a free
-unit in exchange for a positive one.
+Almost everything the field believes about what makes a review helpful was established between 2007 and 2018, on the 2014 or 2018 Amazon releases, often on a few thousand reviews. Mudambi & Schuff's canonical extremity result used 1,587 reviews of six products. Amazon Reviews 2023 covers a marketplace that has since absorbed mobile-first writing, incentivised review programmes and post-2022 generative text. **Nobody has re-tested those claims on it.**
 
-## Dataset
+This project registers twelve findings from the literature — each with its citation, original claim, model term and *expected direction*, fixed before estimation — and assigns each a verdict: **replicates**, **weakens**, **fails**, or **reverses**.
 
-| Property | Value |
-|---|---|
-| Source | Amazon Reviews 2023, McAuley Lab, UC San Diego |
-| Records | 521,607 reviews |
-| Span | September 1999 to September 2023 |
-| Categories | Cell Phones (79.7%), Video Games (17.6%), Beauty (2.7%) |
-| Verified | 485,784 (93.1%) |
-| Unique reviewers / products | 504,856 / 227,791 |
+Getting that answer honestly requires first fixing a validity problem that affects much of the prior work. Helpful votes accumulate with exposure: a 2015 review has had eight years to collect clicks, a 2023 review has had weeks. Models given any time-correlated feature learn to detect review *age* and report strong performance without learning anything about review *quality*. A recent study on this same dataset ([arXiv:2412.02884](https://arxiv.org/abs/2412.02884)) reported 96.91% accuracy from a reviewer-history feature that, for single-review reviewers, is the target restated.
 
-The CSV is not committed here (175 MB, over GitHub's file limit). It is published as a Kaggle
-Dataset:
+We eliminate that class of error **structurally**, measure how much of the prior performance it accounted for, and only then run the replication.
 
-**[Amazon Reviews 2023 Three Category Extract](https://www.kaggle.com/datasets/tahsintajware/amazon-reviews-2023-three-category-extract)**
+## Headline results
 
-Original source: [McAuley Lab on Hugging Face](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023).
+See **[RESULTS.md](RESULTS.md)** for all tables and figures, generated directly from the pipeline output.
 
-## Repository layout
+| Finding | Where |
+| --- | --- |
+| **Which canonical findings replicate, fail, or reverse** | **RESULTS §11** |
+| How much of prior performance is methodological artefact | RESULTS §6 |
+| Which feature blocks actually contribute | RESULTS §7 |
+| Honest model performance against trivial baselines | RESULTS §8 |
+| Whether product type moderates helpfulness | RESULTS §9 |
+| How unequally helpful votes are distributed | RESULTS §10 |
 
-```
-.
-├── notebooks/                        staged pipeline, notebooks 01 to 08
-├── da-lab-project-checkpoint1.ipynb  self-contained run, stages 01 to 04
-├── da-lab-project-final.ipynb        self-contained run, all nine objectives
-├── da_common.py                      schema, cleaning rules, plot style, savers
-├── run.py                            executes the staged pipeline in order
-├── SETUP_kaggle.md                   running it on Kaggle
-├── requirements.txt
-└── Project_Proposal.pdf
-```
+The full write-up, including objectives, limitations and self-evaluation, is in **[REPORT.md](REPORT.md)**.
 
-Two ways to run the same analysis. The `notebooks/` pipeline splits the work into eight stages
-that share `da_common.py` and hand data between each other, which is how the project is organised
-for development. The two root notebooks are self-contained single-file versions that need no
-setup beyond the dataset, which is how it was run and submitted.
+For the Week 7 individual viva, the prepared defence and the numbers worth memorising are in **[VIVA_PREP.md](VIVA_PREP.md)**.
 
-## Pipeline
+> `tests/synthetic_reviews.csv` is not shipped (27 MB). Regenerate it with
+> `python tests/make_synthetic.py` — the seed is fixed, so the validation run is reproducible.
 
-```
-Amazon_Reviews.csv
-        |
-  [01] audit and profiling
-        |
-  [02] preprocessing + feature engineering  -->  reviews_analytical.parquet
-        |
-        +--> [03] satisfaction, verified purchase
-        +--> [04] helpfulness, temporal trends
-        +--> [05] product, customer analytics
-        +--> [06] text analytics, lexicon sentiment
-        +--> [07] window-function ranking
-        |
-  [08] benchmark, evaluation, consolidated results
-```
+---
 
-Notebook 02 persists the cleaned dataset to Parquet, so notebooks 03 to 08 read identical rows
-without reparsing the CSV. If the Parquet is absent, each notebook rebuilds it automatically, so
-any stage can be run on its own.
-
-`da_common.py` holds the schema, cleaning rules, feature definitions, plot style and output savers,
-so those are defined once and imported everywhere.
-
-## Objectives
-
-| # | Objective | Core Spark techniques |
-|---|---|---|
-| 1 | Customer satisfaction | `groupBy`, `pivot` |
-| 2 | Verified-purchase analysis | Conditional aggregation on rating, helpfulness, length |
-| 3 | Helpful-review analysis | Descending `orderBy`, averages by rating |
-| 4 | Temporal trends | Spark SQL date functions, time-series aggregation |
-| 5 | Product-level analytics | `groupBy` with a minimum-review threshold |
-| 6 | Customer activity | `groupBy("user_id")`, bucketed distribution |
-| 7 | Text analytics | `RegexTokenizer`, `StopWordsRemover`, `CountVectorizer`, `HashingTF` + `IDF`, VADER |
-| 8 | Window-function ranking | `dense_rank`, `row_number`, `rowsBetween` |
-| 9 | PySpark vs Pandas benchmark | Timed operations, cold and cached, at three data sizes |
-
-## Key findings
-
-- Ratings are J-shaped rather than bell-shaped: 61.3% five-star, 13.3% one-star, middle ratings
-  rare. Average rating alone hides the distribution, so product ranking applies a minimum-review
-  threshold.
-- Non-verified reviews are roughly 3x longer than verified ones and collect around 3x the helpful
-  votes, a far larger gap than the difference in star rating.
-- Helpful votes reach only 17.1% of reviews, and older reviews have had longer to collect them,
-  so helpfulness is a rare event confounded with review age rather than a continuous quality score.
-- Five-star reviews average 164 characters against 202 to 283 for lower ratings. Satisfied
-  customers confirm and leave; dissatisfied ones explain.
-- The benchmark reproduces the shape the Spark literature predicts: fixed JVM and scheduling
-  overhead dominates at small sizes, and Spark's relative cost falls as data grows.
-
-## Running it
-
-**Locally**
+## Quick start
 
 ```bash
+git clone <your-repo-url>
+cd <repo>
 pip install -r requirements.txt
-mkdir -p data                 # place Amazon_Reviews.csv here
-
-python run.py --list          # show the pipeline
-python run.py                 # run notebooks 01 to 08
-python run.py --checkpoint1   # stages 01 to 04 only
-python run.py --from 05       # resume from a given stage
 ```
 
-Java 11 or newer is required. Executed copies land in `executed/`, so the originals stay clean.
+### Run the study
 
-**On Kaggle**
-
-Attach the dataset linked above, then follow [SETUP_kaggle.md](SETUP_kaggle.md). The two
-self-contained root notebooks need only the dataset and a Run All.
-
-## Outputs
-
-```
-output/
-├── results/      36 tables as CSV and Parquet
-├── figures/      13 charts as 300 dpi PNG
-└── processed/    reviews_analytical.parquet
+```bash
+python src/run_analysis.py       # ~tables and figures into output/
+python src/make_report.py        # regenerate RESULTS.md from those tables
 ```
 
-`results/final_consolidated_findings.csv` carries one headline result per objective, assembled by
-reading the tables the earlier notebooks wrote.
+Point it at your own copy of the data with an environment variable:
 
-## Evaluation
+```bash
+AMAZON_DATA_PATH=/path/to/Amazon_Reviews.csv python src/run_analysis.py
+```
 
-The objectives are descriptive rather than predictive, so evaluation targets correctness and
-reproducibility:
+### Try the demo
 
-- Every headline aggregate is recomputed in Pandas on a sampled subset and compared with the Spark
-  result.
-- Row counts are logged before and after each preprocessing step.
-- Benchmarks are timed cold and cached, repeated, and reported as a mean with standard deviation.
-- The corpus has no sentiment label, so VADER is scored as an agreement rate against star rating
-  with a row-normalised confusion matrix, not as accuracy.
-- Findings are checked against the published literature on review positivity and review
-  manipulation.
+```bash
+python review_scorer.py
+```
 
-## Tech stack
+Paste a draft review and it estimates the probability that readers will mark it helpful, then explains which characteristics drove the estimate and what would improve it.
 
-PySpark (Spark SQL, MLlib, window functions), Pandas, NumPy, Matplotlib, PyArrow, vaderSentiment.
+```
+$ python review_scorer.py --text "I bought this case for my iPhone 14 Pro about
+  three months ago. The drop protection is genuinely good..." --rating 4 --category "Cell Phones"
 
-## References
+  [####################....................]  51.8%
 
-1. Hou, Y., Li, J., He, Z., Yan, A., Chen, X., and McAuley, J. *Bridging Language and Items for Retrieval and Recommendation*. arXiv:2403.03952, 2024.
-2. Chevalier, J. A., and Mayzlin, D. *The Effect of Word of Mouth on Sales: Online Book Reviews*. Journal of Marketing Research, 43(3), 2006.
-3. He, S., Hollenbeck, B., and Proserpio, D. *The Market for Fake Reviews*. Marketing Science, 41(5), 2022.
-4. Saumya, S., Roy, P. K., and Singh, J. P. *Review Helpfulness Prediction on E-commerce Websites: A Comprehensive Survey*. Engineering Applications of Artificial Intelligence, 126, 2023.
-5. Zaharia, M. et al. *Resilient Distributed Datasets: A Fault-Tolerant Abstraction for In-Memory Cluster Computing*. NSDI, 2012.
+  Reasonable. Some room to improve.
+
+   > Length      70 words is on the short side. Adding a specific use
+                 case or comparison typically helps.
+   + Specificity Varied vocabulary, which tends to signal a substantive review.
+   > Images      No photos. Adding one is among the cheapest improvements available.
+```
+
+### In Colab or Kaggle
+
+```python
+import sys; sys.path.insert(0, "src")
+from run_analysis import main
+main()
+```
+
+---
+
+## Repository structure
+
+```
+├── README.md                  ← you are here
+├── REPORT.md                  ← the full written report
+├── RESULTS.md                 ← generated: all results, tables, figures
+├── requirements.txt
+├── review_scorer.py           ← interactive demonstration tool
+├── notebooks/
+│   └── analysis.ipynb         ← runnable end-to-end notebook
+├── src/
+│   ├── config.py              ← every methodological choice, with justification
+│   ├── data_pipeline.py       ← loading, cleaning, exposure control, temporal split
+│   ├── features.py            ← six feature blocks, no lookahead
+│   ├── evaluation.py          ← PR-AUC, lift, within-product NDCG
+│   ├── models.py              ← leakage decomposition, ablation, model comparison
+│   ├── moderation.py          ← product-type moderation, interaction model
+│   ├── fairness.py            ← exposure bias, Wilson and empirical-Bayes ranking
+│   ├── run_analysis.py        ← the driver
+│   └── make_report.py         ← generates RESULTS.md from the output tables
+├── tests/
+│   └── make_synthetic.py      ← synthetic data with planted effects, for validation
+└── output/
+    ├── results/               ← CSV tables
+    ├── figures/               ← PNG figures
+    └── models/                ← persisted best model
+```
+
+**`src/config.py` is worth reading first.** Every parameter a reviewer might question lives there in one place with its justification, rather than scattered through the pipeline as magic numbers.
+
+---
+
+## The three design decisions that matter
+
+### 1. Exposure control
+
+`helpful_vote` is a cumulative count with no denominator — the data records how many people clicked *helpful*, never how many saw the review.
+
+We censor reviews with under 365 days of visibility before the September 2023 collection date, so every retained review had a comparable opportunity to accumulate votes. Residual exposure is kept as an explicit control on a log scale, so remaining age effects are absorbed by that term instead of being credited to text quality.
+
+### 2. Temporal splitting
+
+Train on the earliest 70%, validate on the next 15%, test on the final 15%. The model is trained on the past and evaluated on the future, which is the only arrangement matching deployment.
+
+Base rates differ across the resulting splits. That is genuine temporal drift and we report it. **The test split is never resampled** — class weights apply to training data only, because a rebalanced test set produces a PR-AUC comparable to nothing.
+
+### 3. Reviewer history without lookahead
+
+Prior-review features use an expanding window bounded at the row *before* the current one. A reviewer's first review gets no history, flagged explicitly rather than filled with an imputed mean.
+
+```python
+w_user = (Window.partitionBy("user_id")
+          .orderBy("timestamp")
+          .rowsBetween(Window.unboundedPreceding, -1))   # ← the -1 is the whole point
+```
+
+---
+
+## Why accuracy is never reported
+
+At the observed base rate, a model that predicts "never helpful" for every review scores around 90% accuracy while being completely useless.
+
+Primary metric is **PR-AUC**, reported alongside **PR-AUC lift** — PR-AUC divided by the base rate — which makes "this model learned almost nothing" impossible to disguise. We also report **within-product NDCG@5**, because the platform's real task is ordering the reviews on one product page, not classifying reviews in isolation.
+
+---
+
+## Validation
+
+Before running on real data, the pipeline was executed against a synthetic corpus with **deliberately planted effects of known size and direction**, to confirm the code recovers truth rather than producing plausible-looking output.
+
+```bash
+python tests/make_synthetic.py
+AMAZON_DATA_PATH=tests/synthetic_reviews.csv python src/run_analysis.py
+```
+
+| Effect planted | Recovered |
+| --- | --- |
+| Leaky reviewer feature inflates results | ✓ inflation detected and attributed |
+| Depth matters more for search goods | ✓ interaction recovered, correct sign |
+| Extremity penalised for search goods | ✓ interaction recovered, correct sign |
+| Exposure confound | ✓ neutralised — exposure-only baseline falls to the base rate |
+
+**The replication registry was validated the same way**, and this is the result worth quoting:
+
+> Run against the synthetic corpus, the registry returned `REPLICATES` for **exactly the five findings whose effects had been planted**, and `FAILS` for **exactly the seven that had not**.
+>
+> Zero false positives. Zero false negatives.
+
+That is the strongest correctness evidence obtainable without an external gold standard, and it is why the verdicts can be read as measurements rather than as artefacts of model specification.
+
+Reproducible with a fixed seed.
+
+---
+
+## Requirements
+
+Python 3.9+, Java 11 or 17 (for Spark). See `requirements.txt`.
+
+Runs on a free Colab CPU instance. Runtime scales with corpus size; the synthetic 60k-row validation run completes in about 8 minutes.
+
+---
+
+## Data
+
+Amazon Reviews 2023 — McAuley Lab, UCSD
+https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023
+
+The full release holds 571.54M reviews across 33 categories through September 2023. This project uses a three-category extract (Cell Phones, Beauty, Video Games), chosen because those three span the search/experience product distinction the moderation analysis tests.
+
+Publicly available for research. Reviewer identifiers are pseudonymous; no re-identification is attempted.
+
+---
+
+## License and citation
+
+Course project, provided for educational use.
+
+If the pipeline is useful to you, please cite the underlying dataset:
+
+```bibtex
+@article{hou2024bridging,
+  title={Bridging Language and Items for Retrieval and Recommendation},
+  author={Hou, Yupeng and Li, Jiacheng and He, Zhankui and Yan, An
+          and Chen, Xiusi and McAuley, Julian},
+  journal={arXiv preprint arXiv:2403.03952},
+  year={2024}
+}
+```
